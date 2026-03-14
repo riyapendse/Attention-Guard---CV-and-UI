@@ -25,9 +25,6 @@ attention_guard_web/        ← Web dashboard version (recommended)
 └── templates/
     └── index.html          ← Browser UI
 
-main.py                     ← Standalone OpenCV window version
-requirements.txt
-README.md
 ```
 
 ---
