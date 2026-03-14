@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attention Guard</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #080c10;
+    --surface:   #0d1117;
+    --border:    #1a2332;
+    --accent:    #00e5ff;
+    --green:     #00e676;
+    --orange:    #ff9100;
+    --red:       #ff1744;
+    --muted:     #2a3a4a;
+    --text:      #cdd9e5;
+    --text-dim:  #4a6070;
+    --mono:      'Share Tech Mono', monospace;
+    --sans:      'Rajdhani', sans-serif;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.03) 2px,
+      rgba(0,0,0,0.03) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky; top: 0; z-index: 100;
+  }
+
+  .logo {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .logo-icon {
+    width: 36px; height: 36px;
+    border: 2px solid var(--accent);
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    animation: pulse-border 3s ease-in-out infinite;
+  }
+  .logo-icon::before {
+    content: '';
+    width: 10px; height: 10px;
+    background: var(--accent);
+    border-radius: 50%;
+    animation: pulse-dot 3s ease-in-out infinite;
+  }
+  @keyframes pulse-border {
+    0%,100% { box-shadow: 0 0 0 0 rgba(0,229,255,0.3); }
+    50%      { box-shadow: 0 0 0 8px rgba(0,229,255,0); }
+  }
+  @keyframes pulse-dot {
+    0%,100% { opacity: 1; }
+    50%      { opacity: 0.3; }
+  }
+
+  .logo-text { font-size: 20px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: var(--accent); }
+  .logo-sub  { font-family: var(--mono); font-size: 10px; color: var(--text-dim); letter-spacing: 2px; margin-top: 1px; }
+
+  .header-status {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 12px; color: var(--text-dim);
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .status-dot.active  { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .status-dot.alert   { background: var(--red);   box-shadow: 0 0 8px var(--red); animation: blink 0.5s step-end infinite; }
+  .status-dot.drift   { background: var(--orange); }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ── LAYOUT ── */
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 0;
+    height: calc(100vh - 73px);
+  }
+
+  /* ── FEED PANEL ── */
+  .feed-panel {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .feed-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--surface);
+  }
+  .feed-label {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--text-dim); letter-spacing: 2px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .feed-label::before {
+    content: '▶'; font-size: 8px; color: var(--accent);
+  }
+
+  .feed-wrap {
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    background: #050709;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Corner decorations */
+  .feed-wrap::before, .feed-wrap::after {
+    content: '';
+    position: absolute;
+    width: 40px; height: 40px;
+    border-color: var(--muted);
+    border-style: solid;
+    opacity: 0.4;
+  }
+  .feed-wrap::before { top: 12px; left: 12px; border-width: 1px 0 0 1px; }
+  .feed-wrap::after  { bottom: 12px; right: 12px; border-width: 0 1px 1px 0; }
+
+  #video-feed {
+    max-width: 100%; max-height: 100%;
+    border-radius: 4px;
+    display: block;
+    border: 1px solid var(--border);
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  #video-feed.alert-active {
+    border-color: var(--red);
+    box-shadow: 0 0 30px rgba(255,23,68,0.3);
+  }
+  #video-feed.focused {
+    border-color: rgba(0,230,118,0.3);
+  }
+
+  /* Overlay banner */
+  .status-banner {
+    position: absolute;
+    bottom: 32px; left: 50%; transform: translateX(-50%);
+    padding: 8px 24px;
+    border-radius: 3px;
+    font-family: var(--mono); font-size: 13px; letter-spacing: 2px;
+    font-weight: bold;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .status-banner.visible { opacity: 1; }
+  .status-banner.alert   { background: rgba(255,23,68,0.15); color: var(--red);   border: 1px solid rgba(255,23,68,0.4); }
+  .status-banner.drift   { background: rgba(255,145,0,0.1);  color: var(--orange); border: 1px solid rgba(255,145,0,0.3); }
+  .status-banner.focused { background: rgba(0,230,118,0.08); color: var(--green); border: 1px solid rgba(0,230,118,0.2); }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    display: flex; flex-direction: column;
+    overflow-y: auto;
+    background: var(--surface);
+  }
+  .sidebar::-webkit-scrollbar { width: 3px; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--muted); }
+
+  /* ── SIDEBAR SECTIONS ── */
+  .section {
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-title {
+    font-family: var(--mono); font-size: 10px;
+    letter-spacing: 3px; color: var(--text-dim);
+    text-transform: uppercase; margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-title::after {
+    content: ''; flex: 1; height: 1px; background: var(--border);
+  }
+
+  /* ── START/STOP BUTTON ── */
+  .btn-main {
+    width: 100%; padding: 14px;
+    border: none; border-radius: 4px; cursor: pointer;
+    font-family: var(--sans); font-size: 15px;
+    font-weight: 700; letter-spacing: 3px; text-transform: uppercase;
+    transition: all 0.2s;
+    position: relative; overflow: hidden;
+  }
+  .btn-main.start {
+    background: linear-gradient(135deg, #003d33, #00695c);
+    color: var(--green);
+    border: 1px solid rgba(0,230,118,0.3);
+  }
+  .btn-main.start:hover {
+    background: linear-gradient(135deg, #004d40, #00897b);
+    box-shadow: 0 0 20px rgba(0,230,118,0.2);
+  }
+  .btn-main.stop {
+    background: linear-gradient(135deg, #3d0010, #6d0020);
+    color: var(--red);
+    border: 1px solid rgba(255,23,68,0.3);
+  }
+  .btn-main.stop:hover {
+    background: linear-gradient(135deg, #4d0015, #8d0028);
+    box-shadow: 0 0 20px rgba(255,23,68,0.2);
+  }
+  .btn-main::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.05), transparent);
+  }
+
+  /* ── STATS ── */
+  .stats-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .stat-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px; padding: 12px;
+  }
+  .stat-value {
+    font-family: var(--mono); font-size: 22px;
+    color: var(--accent); font-weight: bold;
+    line-height: 1;
+  }
+  .stat-label {
+    font-size: 11px; color: var(--text-dim);
+    margin-top: 4px; letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  /* Focus bar */
+  .focus-bar-wrap { margin-top: 12px; }
+  .focus-bar-label {
+    display: flex; justify-content: space-between;
+    font-family: var(--mono); font-size: 11px;
+    color: var(--text-dim); margin-bottom: 6px;
+  }
+  .focus-bar-track {
+    height: 6px; background: var(--bg);
+    border-radius: 3px; overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .focus-bar-fill {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, var(--green), var(--accent));
+    border-radius: 3px;
+    transition: width 0.8s ease;
+  }
+
+  /* ── CONTROLS ── */
+  .control-row { margin-bottom: 18px; }
+  .control-row:last-child { margin-bottom: 0; }
+
+  .control-label {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 13px; color: var(--text); margin-bottom: 8px;
+    font-weight: 500;
+  }
+  .control-value {
+    font-family: var(--mono); font-size: 12px;
+    color: var(--accent); background: var(--bg);
+    padding: 2px 8px; border-radius: 3px;
+    border: 1px solid var(--border);
+  }
+
+  /* Slider */
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 100%; height: 4px;
+    background: var(--border); border-radius: 2px; outline: none;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    background: var(--accent); border-radius: 50%;
+    box-shadow: 0 0 6px rgba(0,229,255,0.5);
+    transition: box-shadow 0.2s;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover {
+    box-shadow: 0 0 12px rgba(0,229,255,0.8);
+  }
+
+  /* Sensitivity labels */
+  .slider-labels {
+    display: flex; justify-content: space-between;
+    font-family: var(--mono); font-size: 9px;
+    color: var(--text-dim); margin-top: 4px;
+  }
+
+  /* Text input */
+  .text-input-wrap { display: flex; gap: 8px; }
+  input[type="text"] {
+    flex: 1; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 8px 12px; color: var(--text);
+    font-family: var(--mono); font-size: 13px; outline: none;
+    transition: border-color 0.2s;
+  }
+  input[type="text"]:focus { border-color: var(--accent); }
+
+  .btn-apply {
+    padding: 8px 14px; background: var(--bg);
+    border: 1px solid var(--accent); border-radius: 4px;
+    color: var(--accent); font-family: var(--mono); font-size: 11px;
+    cursor: pointer; letter-spacing: 1px;
+    transition: background 0.2s, box-shadow 0.2s;
+  }
+  .btn-apply:hover {
+    background: rgba(0,229,255,0.08);
+    box-shadow: 0 0 10px rgba(0,229,255,0.2);
+  }
+
+  /* ── DEBUG ── */
+  .debug-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .debug-item {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 6px 10px;
+    font-family: var(--mono); font-size: 11px;
+  }
+  .debug-key   { color: var(--text-dim); font-size: 10px; }
+  .debug-val   { color: var(--accent); margin-top: 2px; }
+
+  /* ── ALERT LOG ── */
+  .log-list {
+    list-style: none;
+    max-height: 120px; overflow-y: auto;
+  }
+  .log-list::-webkit-scrollbar { width: 2px; }
+  .log-list::-webkit-scrollbar-thumb { background: var(--muted); }
+  .log-item {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--text-dim); padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+    display: flex; gap: 10px;
+  }
+  .log-time  { color: var(--accent); min-width: 55px; }
+  .log-empty { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+
+  /* Scrollbar alert flash */
+  @keyframes alert-flash {
+    0%,100% { background: var(--bg); }
+    50%      { background: rgba(255,23,68,0.04); }
+  }
+  body.alerting { animation: alert-flash 0.5s ease infinite; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon"></div>
+    <div>
+      <div class="logo-text">Attention Guard</div>
+      <div class="logo-sub">COMPUTER VISION · FOCUS MONITOR</div>
+    </div>
+  </div>
+  <div class="header-status">
+    <div class="status-dot" id="hdr-dot"></div>
+    <span id="hdr-text">OFFLINE</span>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ── FEED ── -->
+  <div class="feed-panel">
+    <div class="feed-header">
+      <div class="feed-label">LIVE FEED</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim)" id="feed-res">—</div>
+    </div>
+    <div class="feed-wrap">
+      <img id="video-feed" src="/video_feed" alt="Camera Feed">
+      <div class="status-banner" id="status-banner"></div>
+    </div>
+  </div>
+
+  <!-- ── SIDEBAR ── -->
+  <div class="sidebar">
+
+    <!-- Control -->
+    <div class="section">
+      <div class="section-title">Control</div>
+      <button class="btn-main start" id="toggle-btn" onclick="toggleGuard()">
+        ▶ &nbsp; Start Guard
+      </button>
+    </div>
+
+    <!-- Stats -->
+    <div class="section">
+      <div class="section-title">Session Stats</div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-session">0:00</div>
+          <div class="stat-label">Session Time</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-focused">0:00</div>
+          <div class="stat-label">Focused Time</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-alerts">0</div>
+          <div class="stat-label">Alerts Fired</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-pct">—</div>
+          <div class="stat-label">Focus Score</div>
+        </div>
+      </div>
+      <div class="focus-bar-wrap">
+        <div class="focus-bar-label">
+          <span>Focus</span><span id="bar-pct">0%</span>
+        </div>
+        <div class="focus-bar-track">
+          <div class="focus-bar-fill" id="focus-bar"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="section">
+      <div class="section-title">Settings</div>
+
+      <div class="control-row">
+        <div class="control-label">
+          <span>Sensitivity</span>
+          <span class="control-value" id="sens-val">1.0</span>
+        </div>
+        <input type="range" id="sens-slider" min="0.5" max="2.0" step="0.1" value="1.0"
+               oninput="onSensitivity(this.value)">
+        <div class="slider-labels">
+          <span>Very Sensitive</span><span>Lenient</span>
+        </div>
+      </div>
+
+      <div class="control-row">
+        <div class="control-label">
+          <span>Grace Period</span>
+          <span class="control-value" id="grace-val">1.5s</span>
+        </div>
+        <input type="range" id="grace-slider" min="0.5" max="4.0" step="0.5" value="1.5"
+               oninput="onGrace(this.value)">
+        <div class="slider-labels">
+          <span>Instant</span><span>4 seconds</span>
+        </div>
+      </div>
+
+      <div class="control-row">
+        <div class="control-label"><span>Alert Word</span></div>
+        <div class="text-input-wrap">
+          <input type="text" id="alert-word-input" value="FAAAAHHH" placeholder="Alert phrase...">
+          <button class="btn-apply" onclick="applyWord()">SET</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Debug -->
+    <div class="section">
+      <div class="section-title">Signal Debug</div>
+      <div class="debug-grid" id="debug-grid">
+        <div class="debug-item"><div class="debug-key">PITCH</div><div class="debug-val" id="d-p">—</div></div>
+        <div class="debug-item"><div class="debug-key">GAZE V</div><div class="debug-val" id="d-gv">—</div></div>
+        <div class="debug-item"><div class="debug-key">YAW</div><div class="debug-val" id="d-y">—</div></div>
+        <div class="debug-item"><div class="debug-key">GAZE H</div><div class="debug-val" id="d-gh">—</div></div>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="section">
+      <div class="section-title">Alert Log</div>
+      <ul class="log-list" id="log-list">
+        <li class="log-empty">No alerts yet</li>
+      </ul>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  let isRunning    = false;
+  let alertLog     = [];
+  let lastAlertCnt = 0;
+  let sessionStart = null;
+
+  function fmt(secs) {
+    const m = Math.floor(secs/60), s = secs%60;
+    return `${m}:${String(s).padStart(2,'0')}`;
+  }
+
+  async function toggleGuard() {
+    const btn = document.getElementById('toggle-btn');
+    btn.disabled = true;
+    if (!isRunning) {
+      await fetch('/api/start', {method:'POST'});
+      sessionStart = Date.now();
+      isRunning = true;
+      btn.className = 'btn-main stop';
+      btn.innerHTML = '■ &nbsp; Stop Guard';
+    } else {
+      await fetch('/api/stop', {method:'POST'});
+      isRunning = false;
+      sessionStart = null;
+      btn.className = 'btn-main start';
+      btn.innerHTML = '▶ &nbsp; Start Guard';
+    }
+    btn.disabled = false;
+  }
+
+  let sensTimer, graceTimer;
+  function onSensitivity(v) {
+    document.getElementById('sens-val').textContent = parseFloat(v).toFixed(1);
+    clearTimeout(sensTimer);
+    sensTimer = setTimeout(() => applySettings(), 400);
+  }
+  function onGrace(v) {
+    document.getElementById('grace-val').textContent = parseFloat(v).toFixed(1)+'s';
+    clearTimeout(graceTimer);
+    graceTimer = setTimeout(() => applySettings(), 400);
+  }
+  function applyWord() {
+    applySettings();
+  }
+  async function applySettings() {
+    await fetch('/api/settings', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        sensitivity:  parseFloat(document.getElementById('sens-slider').value),
+        alert_word:   document.getElementById('alert-word-input').value,
+        grace_period: parseFloat(document.getElementById('grace-slider').value),
+      })
+    });
+  }
+
+  function addLog(reason) {
+    const now = new Date();
+    const t   = now.toTimeString().slice(0,8);
+    alertLog.unshift({t, reason});
+    if (alertLog.length > 20) alertLog.pop();
+    const list = document.getElementById('log-list');
+    list.innerHTML = alertLog.map(e =>
+      `<li class="log-item"><span class="log-time">${e.t}</span><span>${e.reason}</span></li>`
+    ).join('');
+  }
+
+  async function poll() {
+    try {
+      const r   = await fetch('/api/status');
+      const d   = await r.json();
+      const status = d.status;
+
+      // Header
+      const dot  = document.getElementById('hdr-dot');
+      const hTxt = document.getElementById('hdr-text');
+      dot.className = 'status-dot';
+      if (status === 'focused')  { dot.classList.add('active'); hTxt.textContent = 'FOCUSED'; }
+      else if (status === 'alert')   { dot.classList.add('alert');  hTxt.textContent = 'ALERT'; }
+      else if (status === 'drifting'){ dot.classList.add('drift');  hTxt.textContent = 'DRIFTING'; }
+      else if (status === 'no_face') { hTxt.textContent = 'NO FACE'; }
+      else                           { hTxt.textContent = 'OFFLINE'; }
+
+      // Video border
+      const vid = document.getElementById('video-feed');
+      vid.className = '';
+      if (status === 'alert')   vid.classList.add('alert-active');
+      if (status === 'focused') vid.classList.add('focused');
+
+      // Body flash
+      if (status === 'alert') document.body.classList.add('alerting');
+      else document.body.classList.remove('alerting');
+
+      // Banner
+      const banner = document.getElementById('status-banner');
+      banner.className = 'status-banner';
+      if (status === 'alert') {
+        banner.textContent = '⚠ HEY! ' + d.reason.toUpperCase();
+        banner.classList.add('visible','alert');
+      } else if (status === 'drifting') {
+        banner.textContent = 'Drifting... ' + d.reason;
+        banner.classList.add('visible','drift');
+      } else if (status === 'focused') {
+        banner.classList.add('visible','focused');
+        banner.textContent = '● FOCUSED';
+      }
+
+      // Stats
+      document.getElementById('stat-session').textContent = fmt(d.session_secs);
+      document.getElementById('stat-focused').textContent = fmt(d.focused_secs);
+      document.getElementById('stat-alerts').textContent  = d.alert_count;
+      document.getElementById('stat-pct').textContent     = d.running ? d.focused_pct+'%' : '—';
+
+      const pct = d.running ? d.focused_pct : 0;
+      document.getElementById('focus-bar').style.width = pct+'%';
+      document.getElementById('bar-pct').textContent   = pct+'%';
+
+      // Alert log
+      if (d.alert_count > lastAlertCnt) {
+        addLog(d.reason || 'distracted');
+        lastAlertCnt = d.alert_count;
+      }
+
+      // Debug
+      if (d.debug && Object.keys(d.debug).length) {
+        document.getElementById('d-p').textContent  = d.debug.p  || '—';
+        document.getElementById('d-gv').textContent = d.debug.gv || '—';
+        document.getElementById('d-y').textContent  = d.debug.y  || '—';
+        document.getElementById('d-gh').textContent = d.debug.gh || '—';
+      }
+
+    } catch(e) {}
+    setTimeout(poll, 500);
+  }
+
+  poll();
+</script>
+</body>
+</html>
